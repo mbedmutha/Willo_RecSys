@@ -1,6 +1,9 @@
 # Name of algo -> ECR
 algorithm_name="sm-willo-recommendation-system"
 
+# Change tag to "latest" after debug
+image_tag="test"
+
 #make serve executable
 chmod +x REC_SYS/serve
 account=$(aws sts get-caller-identity --query Account --output text)
@@ -10,7 +13,7 @@ echo ${account}
 # create container full name
 region=$(aws configure get region)
 region=${region:-us-west-2}
-fullname="${account}.dkr.ecr.${region}.amazonaws.com/${algorithm_name}:latest"
+fullname="${account}.dkr.ecr.${region}.amazonaws.com/${algorithm_name}:${image_tag}"
 
 echo ${region}
 echo ${fullname}
@@ -21,6 +24,8 @@ if [ $? -ne 0 ]
 then
     aws ecr create-repository --repository-name "${algorithm_name}" > /dev/null
 fi
+
+echo "Repository exists or has been created"
 
 # Get the login command from ECR and execute it directly
 aws ecr get-login-password --region ${region} | docker login --username AWS --password-stdin ${fullname}

@@ -1,4 +1,6 @@
 import pandas as pd
+import awswrangler as wr
+
 
 def generate_pseudo_tags(df, tagset):
     """
@@ -19,3 +21,26 @@ def generate_pseudo_tags(df, tagset):
     # also see experiments with spacy/BERT - especially useful for fusion
         
     return df
+
+def create_resource_output(resource_dict, workgroup='primary'):
+	asset_category = wr.athena.read_sql_query(
+                        sql=f'SELECT * FROM "asset_category"',
+                        database="willo_dev",
+                        data_source="datalake-athena",
+                        workgroup=workgroup,
+                        ctas_approach=False,
+        )
+	
+	asset_category = asset_category.drop(columns={'jobprocesseddate'}).drop_duplicates(subset=['id'])
+
+	out_list = []
+	for cat_id in list(resource_dict.keys()):
+		temp_dict = {}
+		temp_dict['category'] = {
+			"name" : asset_category.loc[asset_category.id == cat_id, 'name'].item(),
+			"id" : cat_id
+		}
+		temp_dict['services'] = resource_dict[cat_id]
+		out_list.append(temp_dict)
+		
+	return out_list

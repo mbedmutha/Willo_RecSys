@@ -14,7 +14,7 @@ from SimpleRecSys import SimpleRecSys
 #import spacy
 #nlp = spacy.load('en_core_web_sm') 
 
-model = SimpleRecSys()
+model = SimpleRecSys.SimpleRecSys()
 
 #If you plan to use a your own model artifacts, 
 #your model artifacts should be stored in /opt/ml/model/ 

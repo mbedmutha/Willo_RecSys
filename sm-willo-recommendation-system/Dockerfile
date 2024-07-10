@@ -13,7 +13,6 @@ RUN wget https://bootstrap.pypa.io/get-pip.py && python3 get-pip.py && \
 
 #pre-trained model package installation
 RUN pip install awswrangler
-RUN pip install json
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=TRUE
