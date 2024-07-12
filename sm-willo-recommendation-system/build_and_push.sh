@@ -2,7 +2,7 @@
 algorithm_name="sm-willo-recommendation-system"
 
 # Change tag to "latest" after debug
-image_tag="test"
+image_tag="latest"
 
 #make serve executable
 chmod +x REC_SYS/serve
