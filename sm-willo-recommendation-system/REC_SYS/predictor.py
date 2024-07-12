@@ -10,7 +10,6 @@ import time
 sys.path.insert(0, '/opt/program/SimpleRecSys')
 from SimpleRecSys import SimpleRecSys
 
-%%time
 class NumpyEncoder(json.JSONEncoder):
     """ Custom encoder for numpy data types """
     def default(self, obj):
