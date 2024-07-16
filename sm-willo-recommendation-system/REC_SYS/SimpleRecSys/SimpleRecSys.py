@@ -80,7 +80,7 @@ class SimpleRecSys:
 		# User did not select categories themselves
 		else:
 			print(f"No matches found")
-			self.matched_items = None
+			self.matched_items = pd.DataFrame()
 
 			
 	def rank_resources(self):
