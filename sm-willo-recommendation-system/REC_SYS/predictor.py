@@ -61,5 +61,5 @@ def transformation():
 	result = model.predict(resp)
 
 	# resultjson = json.dumps(result)
-	resultjson = json.dumps(out, cls=NumpyEncoder)
+	resultjson = json.dumps(result, cls=NumpyEncoder)
 	return flask.Response(response=resultjson, status=200, mimetype='application/json')
