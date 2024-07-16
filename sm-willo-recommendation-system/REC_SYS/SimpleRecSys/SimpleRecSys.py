@@ -164,7 +164,11 @@ class SimpleRecSys:
 		
 		self.user_categorytags, self.user_categories = get_user_data(user_dict)
 		self._match_resources()
-		print(f"Matched entries resulted in {len(self.matched_items)} items")
+		try:
+			print(f"Matched entries resulted in {len(self.matched_items)} items")
+		except:
+			print(f"No matches found")
+			
 		resource_dict = self.rank_resources()
 		resource_out_list = create_resource_output(resource_dict = resource_dict, 
 												   category_names = self.category_names)
