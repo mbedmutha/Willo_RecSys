@@ -3,9 +3,6 @@ import numpy as np
 import awswrangler as wr
 import time
 import json
-# import os
-
-# os.environ['AWS_DEFAULT_REGION'] = 'us-west-2'
 
 def get_user_data(user_dict):
 	"""
@@ -48,19 +45,18 @@ def get_user_data(user_dict):
 	  }
 	]}
 	"""
-	
-	user_tags = []
+	user_categorytags = []
 	user_categories = []
+	
 	for tag_object in user_dict['category_tags']:
-		user_tags.append(tag_object['id'])
+		user_categorytags.append(tag_object['id'])
 		user_categories.append(tag_object['category']['id'])
 	
-	# {'user_id': user_id, 'tags': ['cricket', 'bollywood', 'career', 'arts/culture-&-fun']}
-	return user_tags, user_categories
+	return user_categorytags, user_categories
 
 
 
-def get_events_data(data_source="datalake-athena", workgroup="primary", 
+def get_events_data(data_source, workgroup="primary", 
 					start_date=None, end_date=None, horizon_days=14):
 
 	"""
@@ -98,37 +94,47 @@ def get_events_data(data_source="datalake-athena", workgroup="primary",
 
 	return events_df
 
-def get_resource_tags_categories(data_source="datalake-athena", workgroup='primary'):
-	# query = f"""SELECT * FROM "asset_asset" """
-	# resource_df = wr.athena.read_sql_query(
-	#                     sql = query,
-	#                     database = "willo_dev",
-	#                     data_source = data_source,
-	#                     workgroup = workgroup,
-	#                     ctas_approach = False,
-	#     )
-	
+def get_category_names(data_source="datalake-athena", workgroup='primary'):
 	asset_category = wr.athena.read_sql_query(
-	                    sql=f'SELECT * FROM "asset_asset_category"',
-	                    database="willo_dev",
-	                    data_source="datalake-athena",
-	                    workgroup=workgroup,
-	                    ctas_approach=False,
-	    )
-	asset_category = asset_category.drop(columns={'jobprocesseddate'}).drop_duplicates(subset=['id'])
-	
-	asset_tags = wr.athena.read_sql_query(
-	                    sql=f'SELECT * FROM "asset_asset_tags"',
-	                    database="willo_dev",
-	                    data_source="datalake-athena",
-	                    workgroup='primary',
-	                    ctas_approach=False,
-	    )
-	asset_tags = asset_tags.drop(columns={'jobprocesseddate'}).drop_duplicates(subset=['id'])
-	
-	search_space = asset_category.merge(asset_tags, on='asset_id')[['category_id', 'asset_id', 'tag_id']].drop_duplicates()
-	# del asset_tags
-	# del asset_category
-	search_space = None
-	print("Got get_resource_tags_categories")
+		sql=f'SELECT * FROM "asset_category"',
+		database="willo_dev",
+		data_source="datalake-athena",
+		workgroup='primary',
+		ctas_approach=False,
+	)
+	asset_category = asset_category.loc[
+		asset_category.jobprocesseddate == asset_category.jobprocesseddate.max(), 
+		['id','name']
+	]
+	category_name_id = dict(zip(asset_category['id'], asset_category['name']))
+	return category_name_id
+
+def get_resource_space(data_source="datalake-athena", workgroup='primary'):
+	# SQL join category_id, categorytag_id, asset_id, tag_id ON asset_id
+	sql_query = """
+		SELECT DISTINCT
+			c.category_id,
+			c.asset_id,
+			t.tag_id,
+			ct.categorytag_id
+		FROM
+			asset_asset_category c
+		JOIN
+			asset_asset_tags t
+		ON
+			c.asset_id = t.asset_id
+		JOIN
+			asset_asset_category_tag ct
+		ON
+			c.asset_id = ct.asset_id
+	"""
+
+	# Execute the query and read the results into a DataFrame
+	search_space = wr.athena.read_sql_query(
+		sql=sql_query,
+		database="willo_dev",
+		data_source="datalake-athena",
+		workgroup=workgroup,
+		ctas_approach=False
+	)
 	return search_space
