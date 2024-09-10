@@ -105,11 +105,13 @@ def get_events_data(data_source, workgroup="primary",
     events_df['id'] = 'tockify_'+events_df['calname']+'_'+events_df['uid']+'_'+events_df['start_millis'].astype(str)
     
     events_df['tags'] = events_df['tags'].apply(lambda x: [item.strip().lower() for item in x.strip('[]').split(',')])
-    events_df = events_df.loc[events_df['calname'] == 'ucenevents']
+    events_df = events_df.loc[events_df['calname'] != 'ucsdwc']
     # events_df = events_df.loc[events_df.date == events_df.date.max()]
     
     events_df = events_df.sort_values(by='tags', na_position='last')
-    events_df = events_df.drop_duplicates(subset=['summary', 'start_millis'])
+    
+    # if summary, start_millis together then repeat events might appear often
+    events_df = events_df.drop_duplicates(subset=['summary']) #, 'start_millis'])
     
 
     return events_df
@@ -152,31 +154,30 @@ def get_category_names(data_source="datalake-athena", workgroup='primary'):
     return category_name_id
 
 def get_resource_space(data_source="datalake-athena", workgroup='primary'):
-    # SQL join category_id, categorytag_id, asset_id, tag_id ON asset_id
-    sql_query = """
-        SELECT DISTINCT
-            c.category_id,
-            c.asset_id,
-            t.tag_id,
-            ct.categorytag_id
-        FROM
-            asset_asset_category c
-        JOIN
-            asset_asset_tags t
-        ON
-            c.asset_id = t.asset_id
-        JOIN
-            asset_asset_category_tag ct
-        ON
-            c.asset_id = ct.asset_id
-    """
+#     # SQL join category_id, categorytag_id, asset_id, tag_id ON asset_id
+#   sql_query = """
+#       SELECT DISTINCT
+#           c.category_id,
+#           c.asset_id,
+#           t.tag_id,
+#           ct.categorytag_id
+#       FROM
+#           asset_asset_category c
+#       JOIN
+#           asset_asset_tags t
+#       ON
+#           c.asset_id = t.asset_id
+#       JOIN
+#           asset_asset_category_tag ct
+#       ON
+#           c.asset_id = ct.asset_id
+#   """
 
-    # Execute the query and read the results into a DataFrame
-    search_space = wr.athena.read_sql_query(
-        sql=sql_query,
-        database="willo_dev",
-        data_source="datalake-athena",
-        workgroup=workgroup,
-        ctas_approach=False
-    )
+    ct = get_asset_data("asset_asset_category_tag")
+    c = get_asset_data("asset_asset_category")
+    t = get_asset_data("asset_asset_tags")
+
+    search_space = pd.merge(ct, c, on="asset_id")
+    search_space = pd.merge(search_space, t, on="asset_id")
+    search_space = search_space[['id','asset_id', 'categorytag_id', 'category_id']]
     return search_space

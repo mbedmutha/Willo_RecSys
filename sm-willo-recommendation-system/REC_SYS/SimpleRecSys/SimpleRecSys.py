@@ -3,9 +3,10 @@ import numpy as np
 import awswrangler as wr
 import time
 import json
+import boto3
 
-from loaders import get_events_data, get_user_data, get_resource_space, get_category_names, create_tags_from_app
-from utils import create_resource_output
+from .loaders import get_events_data, get_user_data, get_resource_space, get_category_names, create_tags_from_app
+from .utils import create_resource_output
 
 class SimpleRecSys:
     """
@@ -19,8 +20,15 @@ class SimpleRecSys:
         self.athena_data_source = athena_data_source
         
         # Replace with S3 paths later
-        self.tockify_tags_path = "./tockify_tags.txt"
-        self.tockify_mapping_path = "./tockify_mapping.json"
+        # self.tockify_tags_path = "./tockify_tags.txt"
+        # self.tockify_mapping_path = "./tockify_mapping.json"
+        
+        self.s3_client = boto3.client('s3')
+        self.bucket_name = 'chi-willo-sagemaker-output-data'
+        
+        self.calname_apptag_map_path = "model-metadata/calname_apptag_map.json"
+        self.calname_appcat_map_path = "model-metadata/calname_appcat_map.json"
+        self.caltag_apptag_map_path = "model-metadata/caltag_apptag_map.json"
         
         self.initialization_time = time.time()
         self.reset_frequency_seconds = 43200 # 12 hours
@@ -37,215 +45,84 @@ class SimpleRecSys:
         
     # Basic Code to reset/sync with database
     def reset_event_info(self):
+        # Read events
         self.events_df = get_events_data(data_source=self.athena_data_source, horizon_days=100)
         
-        # with open(self.tockify_mapping_path, 'r') as json_file:
-        #     self.event_user_map = json.load(json_file)
+        # Ensure tags_from_app exists
+        if not hasattr(self, 'tags_from_app'):
+            self.tags_from_app = create_tags_from_app()
             
-        self.event_user_map = {'TWOW': [],
-            'Family-Friendly': ['Students with Dependents'],
-            'Alumni': ['Mentoring', 'Career Counseling', 'Professional Development'],
-            'Art': ['Crafts', 'Woodworking', 'Mixed Media', 'Ceramics', 'Jewelry'],
-            'Athletics': ['Athlete Wellbeing',
-            'Physical Activity',
-            'REC Classes',
-            'Online Exercise'],
-            'The-Basement': [],
-            'CalFresh': ['Food Security'],
-            'Career-Info': ['Career Counseling',
-            'Career Events',
-            'Professional Development',
-            'Internships',
-            'Networking',
-            'Mentoring'],
-            'Changemaker': ['Community Service', 'Empowerment'],
-            'Community-Involvement': ['Community Service',
-            'Peer Support',
-            'Group Counseling',
-            'Mentoring'],
-            'Contest': [],
-            'Cross-Cultural-Center': ['Asian, Pacific Islander, Middle Eastern, Desi American',
-            'LatinX',
-            'Native American'],
-            'Culture': ['Asian, Pacific Islander, Middle Eastern, Desi American',
-            'LatinX',
-            'Native American'],
-            'DEI': ['Asian, Pacific Islander, Middle Eastern, Desi American',
-            'LatinX',
-            'Native American'],
-            'Dependents': ['Students with Dependents'],
-            'Design': ['Mixed Media', 'Ceramics', 'Jewelry'],
-            'Eighth': [],
-            'Engineering': [],
-            'Epstein-Family-Amphitheater': [],
-            'ERC': [],
-            'Extended-Studies': ['Academic Support'],
-            'Faith-Based': ['Worldviews'],
-            'Fellowship': ['Mentoring', 'Peer Support'],
-            'Entrepreneurship': ['Professional Development',
-            'Career Counseling',
-            'Networking'],
-            'Finals': ['Stress Management'],
-            'First-Gen': ['Mentoring'],
-            'Fitness': ['Physical Activity', 'REC Classes', 'Online Exercise'],
-            'Fun': [],
-            'Games': [],
-            'GBM': [],
-            'Giveaway': [],
-            'Graduate-Students': ['Graduate Students'],
-            'Healthcare': ['Telehealth',
-            'Physical Activity',
-            'Nutrition',
-            'Reproductive Health',
-            'Eating Disorders',
-            'Transgender Care'],
-            'Hiring': ['Career Counseling', 'Professional Development'],
-            'iLead': ['Mentoring'],
-            'Info-Session': ['Career Events'],
-            'Innovation': ['Professional Development'],
-            'International': ['International Students'],
-            'Internship': ['Internships',
-            'Career Counseling',
-            'Professional Development'],
-            'Job-Opportunity': ['Career Counseling', 'Professional Development'],
-            'Lecture': ['Academic Support'],
-            'Leadership': ['Mentoring'],
-            'Life-Skills': ['Life Skills',
-            'Financial Literacy',
-            'Peer Support',
-            'Stress Management'],
-            'LGBTQIA+': [],
-            'The-Loft': [],
-            'Marshall': [],
-            'Medical': [],
-            'Mental-Health': ['Online Mental Health',
-            'ADHD',
-            'Anxiety Management',
-            'Crisis Support',
-            'Mindfulness and Meditation',
-            'Stress Management',
-            'Substance Abuse Prevention',
-            'Eating Disorders',
-            '1:1 Therapy',
-            'Group Counseling'],
-            'Mentorship': ['Mentoring', 'Peer Support'],
-            'Military': [],
-            'Mixer': ['Community Service'],
-            'Movies': [],
-            'Muir': [],
-            'Music': [],
-            'Outback': ['Outdoors'],
-            'Outreach': ['Community Service'],
-            'Price-Center-Student-Union': [],
-            'Product': [],
-            'Q&A/Discussion': [],
-            'Recreation': ['Outdoors'],
-            'Research': ['Academic Support', 'Graduate Students'],
-            'Revelle': [],
-            'Scholarship': ['Tuition Assistance'],
-            'Seventh': [],
-            'Seminar/Workshop': ['Career Events', 'Academic Support'],
-            'Sixth': [],
-            'Social-Justice': ['Community Service', 'Empowerment'],
-            'Spring-Break': [],
-            'STEM': [],
-            'Stress-Relief': ['Stress Management', 'Online Mental Health'],
-            'Student-Center': [],
-            'Student-Veteran': [],
-            'Student-Organization': ['Community Service'],
-            'Support-Group': ['Group Counseling', 'Peer Support'],
-            'Sustainability': [],
-            'Technology': [],
-            'Theater': [],
-            'Transfer': ['Transfer Students'],
-            'Volunteer': ['Community Service'],
-            'Warren': [],
-            'Library-Walk': [],
-            'Movie-Nights-@-PC': [],
-            'Pollinator-Club': [],
-            'Bee-Campus': []
-        }
-
-        # with open(self.tockify_tags_path, 'r') as f:
-        #     taglist = f.readlines()
-        #     self.taglist = [tagname.strip('\n') for tagname in taglist]
+        # Load mapping info
+        response = self.s3_client.get_object(Bucket=self.bucket_name, Key=self.caltag_apptag_map_path)
+        content = response['Body'].read().decode('utf-8')
+        self.event_user_map = json.loads(content)
         
-        self.taglist = ['TWOW', 'Family-Friendly', 'Alumni',
-        'Art', 'Athletics', 'The-Basement', 'CalFresh',
-        'Career-Info', 'Changemaker', 'Community-Involvement',
-        'Contest', 'Cross-Cultural-Center', 'Culture', 'DEI',
-        'Dependents', 'Design', 'Eighth', 'Engineering',
-        'Epstein-Family-Amphitheater', 'ERC', 'Extended-Studies',
-        'Faith-Based', 'Fellowship', 'Entrepreneurship', 
-        'Finals', 'First-Gen', 'Fitness', 'Fun',
-        'Games', 'GBM', 'Giveaway', 'Graduate-Students', 
-        'Healthcare','Hiring','iLead',
-        'Info-Session', 'Innovation', 'International',
-        'Internship', 'Job-Opportunity', 'Lecture', 'Leadership',
-        'Life-Skills', 'LGBTQIA+', 'The-Loft', 'Marshall',
-        'Medical', 'Mental-Health', 'Mentorship', 'Military',
-        'Mixer', 'Movies', 'Muir', 'Music', 'Outback',
-        'Outreach', 'Price-Center-Student-Union','Product',
-        'Q&A/Discussion', 'Recreation', 'Research','Revelle',
-        'Scholarship', 'Seventh', 'Seminar/Workshop',
-        'Sixth','Social-Justice','Spring-Break',
-        'STEM','Stress-Relief','Student-Center',
-        'Student-Veteran','Student-Organization',
-        'Support-Group','Sustainability',
-        'Technology','Theater','Transfer',
-        'Volunteer','Warren','Library-Walk',
-        'Movie-Nights-@-PC','Pollinator-Club','Bee-Campus']
-
         # Verify tags
-        invalid_tags=[]
-        invalid_entries = {}
+#         invalid_tags=[]
+#         invalid_entries = {}
         available_tags = self.tags_from_app['name'].to_list()
 
-        for center_tag, values in self.event_user_map.items():
-            tags = values
-            invalid_tags = [tag for tag in tags if tag not in available_tags and tag not in self.taglist]
+#         for center_tag, values in self.event_user_map.items():
+#             tags = values
+#             invalid_tags = [tag for tag in tags if tag not in available_tags and tag not in self.taglist]
 
-            if invalid_tags:    
-                invalid_entries[center_tag] = invalid_tags
+#             if invalid_tags:    
+#                 invalid_entries[center_tag] = invalid_tags
                 
+        default_student_tags = [
+            "Peer Support"
+        ]
+    
         # Replace tag_name by tag_id
         for key in self.event_user_map:
             tags = self.event_user_map[key]
-            for i, tag in enumerate(tags):            
+            tags += default_student_tags
+            for i, tag in enumerate(tags):
                 if tag in available_tags:
                     tag_id = self.tags_from_app[self.tags_from_app['name'] == tag]['id'].iloc[0]
                     tags[i] = tag_id
-
                 self.event_user_map[key] = [x for x in tags if type(x) != str]
                 
-    
-        # Make combined tags list for unicenter tags list in events_df
+        # default_event_tags = [
+        #     "Price-Center-Student-Union", "Student-Center",
+        #     "The-Basement", "The-Loft"
+        # ]        
+        # default_event_tags = [x.lower() for x in default_event_tags]
+
         asset_tags_ids = []
+        lowercase_keys = {i.lower(): i for i in self.event_user_map.keys()}
+
         for index, row in self.events_df.iterrows():
             flag = True
             new_tags = []
-            if len(row['tags'])==0:
-                if row['calname'] == 'oasisevents':
-                    new_tags.append('Academic Support')
+            if row['tags']== ['']:
+                # for tag in default_event_tags:
+                #     new_tags.extend(self.event_user_map.get(lowercase_keys[tag]))
+                #     flag = False
+                # # print(row['summary'], new_tags)
+                asset_tags_ids.append(new_tags)
+                continue
             for tag in row['tags']:
-                lowercase_keys = {i.lower(): i for i in self.event_user_map.keys()}
                 if (tag in lowercase_keys.keys()) and (self.event_user_map.get(lowercase_keys[tag]) != []):
                     new_tags.extend(self.event_user_map.get(lowercase_keys[tag]))
                     flag = False
-            asset_tags_ids.append(sorted(new_tags))
-
+            asset_tags_ids.append(new_tags)
         self.events_df['asset_tags_ids'] = asset_tags_ids
-
-        # Their categories
+        
+        # # Their categories
         eventtags_cat = []
         for tags in self.events_df['asset_tags_ids']:
-            cats = set([self.tags_from_app[self.tags_from_app['id']== tag]['category_id'].iloc[0] for tag in tags])
+            if tags == []:
+                cats = set([2, 3, 7])
+            try:
+                cats = set([self.tags_from_app[self.tags_from_app['id']== tag]['category_id'].iloc[0] for tag in tags])
+            except:
+                cat = set([])
             eventtags_cat.append(cats)
 
         self.events_df['eventtags_cat'] = eventtags_cat
         # Please note that the combined list of appended tags for all keys is as it is, and not a set - for frequency purposes
-        
-        
+
     def reset_resource_info(self):
         self.resource_space = get_resource_space(data_source=self.athena_data_source)
         self.category_names = get_category_names(data_source=self.athena_data_source)
@@ -264,7 +141,7 @@ class SimpleRecSys:
         return tag_overlap * w_tags + category_overlap * w_cats
 
     # Main event recommendations
-    def recommend_events(self, w_tags=2, w_cats=1):
+    def recommend_events(self, w_tags=5, w_cats=1):
         """
         Recommends top 5 events based on tag and category overlap.
         Assumes asset_tags_ids and eventtags_cat already in self.events_df
@@ -277,6 +154,7 @@ class SimpleRecSys:
             usertags = self.user_categorytags
             usertags_cat = self.user_categories
         else:
+            print("Returning 5 random events")
             return self.events_df.sample(n=min(5, len(self.events_df)))['id'].to_list()
         
         # if len(usertags) == 0 or len(usertags_cat):
@@ -294,6 +172,7 @@ class SimpleRecSys:
             event_scores.append((index, combined_score))
 
         event_scores.sort(key=lambda x: x[1], reverse=True)
+        print(f"Found {len(event_scores)} events returned 5")
         top_5_events = self.events_df.loc[[x[0] for x in event_scores[:5]]]        
 
         return top_5_events['id'].to_list()
@@ -454,6 +333,65 @@ class SimpleRecSys:
         return out_dict
     
     
+##### ##### ##### ##### #####
+#         with open(self.tockify_mapping_path, 'r') as json_file:
+#             self.event_user_map = json.load(json_file)
+            
+        # with open(self.tockify_tags_path, 'r') as f:
+        #     taglist = f.readlines()
+        #     self.taglist = [tagname.strip('\n') for tagname in taglist]
+        
+#         # Verify tags
+#         invalid_tags=[]
+#         invalid_entries = {}
+#         available_tags = self.tags_from_app['name'].to_list()
+
+#         for center_tag, values in self.event_user_map.items():
+#             tags = values
+#             invalid_tags = [tag for tag in tags if tag not in available_tags and tag not in self.taglist]
+
+#             if invalid_tags:    
+#                 invalid_entries[center_tag] = invalid_tags
+                
+#         # Replace tag_name by tag_id
+#         for key in self.event_user_map:
+#             tags = self.event_user_map[key]
+#             for i, tag in enumerate(tags):            
+#                 if tag in available_tags:
+#                     tag_id = self.tags_from_app[self.tags_from_app['name'] == tag]['id'].iloc[0]
+#                     tags[i] = tag_id
+
+#                 self.event_user_map[key] = [x for x in tags if type(x) != str]
+##### ##### ##### ##### #####
+                    
+##### ##### ##### ##### #####    
+#         # Make combined tags list for unicenter tags list in events_df
+#         asset_tags_ids = []
+#         for index, row in self.events_df.iterrows():
+#             flag = True
+#             new_tags = []
+#             if len(row['tags'])==0:
+#                 if row['calname'] == 'oasisevents':
+#                     new_tags.append('Academic Support')
+#             for tag in row['tags']:
+#                 lowercase_keys = {i.lower(): i for i in self.event_user_map.keys()}
+#                 if (tag in lowercase_keys.keys()) and (self.event_user_map.get(lowercase_keys[tag]) != []):
+#                     new_tags.extend(self.event_user_map.get(lowercase_keys[tag]))
+#                     flag = False
+#             asset_tags_ids.append(sorted(new_tags))
+
+#         self.events_df['asset_tags_ids'] = asset_tags_ids
+
+#         # Their categories
+#         eventtags_cat = []
+#         for tags in self.events_df['asset_tags_ids']:
+#             cats = set([self.tags_from_app[self.tags_from_app['id']== tag]['category_id'].iloc[0] for tag in tags])
+#             eventtags_cat.append(cats)
+
+#         self.events_df['eventtags_cat'] = eventtags_cat
+#         # Please note that the combined list of appended tags for all keys is as it is, and not a set - for frequency purposes
+##### ##### ##### ##### #####        
+
 ## Supporting Code
 
 #   def _match_events(self):        
