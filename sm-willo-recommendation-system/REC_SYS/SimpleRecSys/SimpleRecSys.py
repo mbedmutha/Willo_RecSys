@@ -5,8 +5,8 @@ import time
 import json
 import boto3
 
-from .loaders import get_events_data, get_user_data, get_resource_space, get_category_names, create_tags_from_app
-from .utils import create_resource_output
+from loaders import get_events_data, get_user_data, get_resource_space, get_category_names, create_tags_from_app
+from utils import create_resource_output
 
 class SimpleRecSys:
     """
