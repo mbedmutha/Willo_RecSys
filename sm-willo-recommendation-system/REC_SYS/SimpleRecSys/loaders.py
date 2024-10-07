@@ -131,7 +131,8 @@ def get_events_data(data_source, workgroup="primary",
         
         events_df = events_df[events_df['start_millis'] >= curr_millis_utc]
         events_df = events_df[events_df['end_millis'] <= end_millis_utc]
-        events_df['calname'] = events_df.template.str.lower().apply(lambda x: "".join(x.split()))
+        # events_df['calname'] = events_df.template.str.lower().apply(lambda x: "".join(x.split()))
+        events_df['calname'] = 'ucsandiegohealth'
         events_df['id'] = "trumba_"+events_df['calname']+"_"+events_df.eventid.astype(str)
         events_df['tags'] = ['']*len(events_df)
         events_df = events_df.rename({'title': 'summary'}, axis=1)
