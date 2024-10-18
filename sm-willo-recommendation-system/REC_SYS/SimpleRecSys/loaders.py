@@ -148,10 +148,10 @@ def get_events_data(data_source, workgroup="primary",
           'end_millis', 'description',
           'start_millis', 'id']
 
-    # tockify_events = get_tockify_data()
+    tockify_events = get_tockify_data()
     trumba_events = get_trumba_data()
 
-    events_df = trumba_events
+    events_df = tockify_events
     # pd.concat([tockify_events[common], trumba_events[common]])
    
 #     query = f"""SELECT * FROM "tockify" where "start_millis" >= {curr_millis_utc} and "start_millis" < {end_millis_utc} and date = MAX(date)"""
