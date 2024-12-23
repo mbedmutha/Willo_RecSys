@@ -54,13 +54,108 @@ def get_user_data(user_dict):
     
     return user_categorytags, user_categories
 
+def get_tockify_data(curr_millis_utc, end_millis_utc):
+    query = f"""
+    SELECT *
+    FROM "tockify"
+    WHERE "start_millis" >= {curr_millis_utc}
+      AND "start_millis" < {end_millis_utc}
+      AND "date" = (SELECT MAX("date") FROM "tockify")
+    """
+    events_df = wr.athena.read_sql_query(
+        sql=query,
+        database="events_data",
+        data_source="datalake-athena",
+        workgroup="primary",
+        ctas_approach=False,
+    )
+    
+    events_df['id'] = 'tockify_'+events_df['calname']+'_'+events_df['uid']+'_'+events_df['start_millis'].astype(str)
 
+    events_df['tags'] = events_df['tags'].apply(lambda x: [item.strip().lower() for item in x.strip('[]').split(',')])
+    events_df = events_df.loc[events_df['calname'] != 'ucsdwc']
+    # events_df = events_df.loc[events_df.date == events_df.date.max()]
+
+    events_df = events_df.sort_values(by='tags', na_position='last')
+
+    # if summary, start_millis together then repeat events might appear often
+    events_df = events_df.drop_duplicates(subset=['summary']) #, 'start_millis'])
+
+    return events_df
+    
+def get_trumba_data(curr_millis_utc, end_millis_utc):
+    query = f"""
+    WITH combined_tags AS (
+        SELECT 
+            eventid, 
+            array_distinct(
+                flatten(
+                    array_agg(
+                        transform(
+                            split(field.value, ', '), 
+                            x -> lower(x)
+                        )
+                    )
+                )
+            ) AS "combined_tags_arr"
+        FROM events_data.trumba_data 
+        CROSS JOIN UNNEST(customfields) AS t(field)
+        WHERE 
+            field.label = 'Event Type'
+        GROUP BY eventid
+    )
+    SELECT 
+        t.*, 
+        c.combined_tags_arr
+    FROM events_data.trumba_data t
+    LEFT JOIN combined_tags c ON t.eventid = c.eventid;
+    """
+    
+    events_df = wr.athena.read_sql_query(
+        sql=query,
+        database="events_data",
+        data_source="datalake-athena",
+        workgroup="primary",
+        ctas_approach=False,
+    )
+    
+    events_df['startdatetime'] = pd.to_datetime(events_df['startdatetime'])
+    events_df['start_millis'] = pd.to_datetime(events_df.startdatetime)
+    events_df['start_millis'] = events_df['start_millis'].dt.tz_localize('UTC', ambiguous='NaT', nonexistent='shift_forward').dt.tz_convert('America/Los_Angeles')
+    events_df['start_millis'] = events_df['start_millis'].astype('int64') // 10**6
+    
+    events_df['enddatetime'] = pd.to_datetime(events_df['enddatetime'])
+    events_df['end_millis'] = pd.to_datetime(events_df.startdatetime)
+    events_df['end_millis'] = events_df['end_millis'].dt.tz_localize('UTC', ambiguous='NaT', nonexistent='shift_forward').dt.tz_convert('America/Los_Angeles')
+    events_df['end_millis'] = events_df['end_millis'].astype('int64') // 10**6
+    
+    events_df = events_df[events_df['start_millis'] >= curr_millis_utc]
+    events_df = events_df[events_df['end_millis'] <= end_millis_utc]
+
+    # events_df['calname'] = events_df.template.str.lower().apply(lambda x: "".join(x.split()))
+    events_df['calname'] = events_df.template.str.lower().apply(lambda x: "".join(x.split()) if isinstance(x, str) else x)
+
+    ## Trumba id definition?
+    events_df['id'] = "trumba_"+events_df['calname']+"_"+ events_df.eventid.astype(str)
+
+    ## Refine tag search!!
+    events_df['tags'] = events_df['combined_tags_arr'].copy()
+    events_df['tags'] = events_df['tags'].fillna("[]")
+    events_df['tags'] = events_df['tags'].apply(lambda x: [item.strip().lower() for item in x.strip('[]').split(',')])
+    
+    events_df = events_df.rename({'title': 'summary'}, axis=1)
+    
+    events_df = events_df.sort_values(by='tags', na_position='last')
+
+    # if summary, start_millis together then repeat events might appear often
+    events_df = events_df.drop_duplicates(subset=['summary']) #, 'start_millis'])
+    
+    return events_df
 
 def get_events_data(data_source, workgroup="primary", 
                     start_date=None, end_date=None, horizon_days=14):
-
     """
-    Retrieve events data within a specified time horizon.
+    Retrieve events data within a specifed time horizon.
     
     Args:
         data_source (str): Athena data source to query from.
@@ -76,81 +171,13 @@ def get_events_data(data_source, workgroup="primary",
     horizon_millis = horizon_days * 86400 * 1000
     end_millis_utc = curr_millis_utc + horizon_millis
     
-    def get_tockify_data():
-        query = f"""
-        SELECT *
-        FROM "tockify"
-        WHERE "start_millis" >= {curr_millis_utc}
-          AND "start_millis" < {end_millis_utc}
-          AND "date" = (SELECT MAX("date") FROM "tockify")
-        """
-        events_df = wr.athena.read_sql_query(
-            sql=query,
-            database="events_data",
-            data_source=data_source,
-            workgroup=workgroup,
-            ctas_approach=False,
-        )
-        
-        events_df['id'] = 'tockify_'+events_df['calname']+'_'+events_df['uid']+'_'+events_df['start_millis'].astype(str)
-    
-        events_df['tags'] = events_df['tags'].apply(lambda x: [item.strip().lower() for item in x.strip('[]').split(',')])
-        events_df = events_df.loc[events_df['calname'] != 'ucsdwc']
-        # events_df = events_df.loc[events_df.date == events_df.date.max()]
+    tockify_events = get_tockify_data(curr_millis_utc, end_millis_utc)
+    trumba_events = get_trumba_data(curr_millis_utc, end_millis_utc)
 
-        events_df = events_df.sort_values(by='tags', na_position='last')
-
-        # if summary, start_millis together then repeat events might appear often
-        events_df = events_df.drop_duplicates(subset=['summary']) #, 'start_millis'])
-
-        return events_df
-    
-    def get_trumba_data():
-        query = f"""
-        SELECT *
-        FROM "trumba_data"
-        """
-        
-        events_df = wr.athena.read_sql_query(
-            sql=query,
-            database="events_data",
-            data_source="datalake-athena",
-            workgroup="primary",
-            ctas_approach=False,
-        )
-        
-        events_df['startdatetime'] = pd.to_datetime(events_df['startdatetime'])
-        events_df['start_millis'] = pd.to_datetime(events_df.startdatetime)
-        events_df['start_millis'] = events_df['start_millis'].dt.tz_localize('UTC', ambiguous='NaT', nonexistent='shift_forward')
-        events_df['start_millis'] = events_df['start_millis'].astype('int64') // 10**6
-        
-        events_df['enddatetime'] = pd.to_datetime(events_df['enddatetime'])
-        events_df['end_millis'] = pd.to_datetime(events_df.startdatetime)
-        events_df['end_millis'] = events_df['end_millis'].dt.tz_localize('UTC', ambiguous='NaT', nonexistent='shift_forward')
-        events_df['end_millis'] = events_df['end_millis'].astype('int64') // 10**6
-        
-        events_df = events_df[events_df['start_millis'] >= curr_millis_utc]
-        events_df = events_df[events_df['end_millis'] <= end_millis_utc]
-        # events_df['calname'] = events_df.template.str.lower().apply(lambda x: "".join(x.split()))
-        events_df['calname'] = events_df.template.str.lower().apply(lambda x: "".join(x.split()) if isinstance(x, str) else x)
-        events_df['id'] = "trumba_"+events_df['calname']+"_"+events_df.eventid.astype(str)
-        events_df['tags'] = ['']*len(events_df)
-        events_df = events_df.rename({'title': 'summary'}, axis=1)
-        
-        events_df = events_df.sort_values(by='tags', na_position='last')
-
-        # if summary, start_millis together then repeat events might appear often
-        events_df = events_df.drop_duplicates(subset=['summary']) #, 'start_millis'])
-        
-        return events_df
-    
     common = ['calname', 'tags', 'summary',
-          'end_millis', 'description',
-          'start_millis', 'id']
-
-    tockify_events = get_tockify_data()
-    trumba_events = get_trumba_data()
-
+      'end_millis', 'description',
+      'start_millis', 'id']
+    
     events_df = pd.concat([tockify_events[common], trumba_events[common]])
    
 #     query = f"""SELECT * FROM "tockify" where "start_millis" >= {curr_millis_utc} and "start_millis" < {end_millis_utc} and date = MAX(date)"""

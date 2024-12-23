@@ -91,11 +91,11 @@ class SimpleRecSys:
 
         asset_tags_ids = []
         lowercase_keys = {i.lower(): i for i in self.event_user_map.keys()}
-
+        
         for index, row in self.events_df.iterrows():
             flag = True
             new_tags = []
-            if row['tags']== ['']:
+            if row['tags'] == ['']:
                 # for tag in default_event_tags:
                 #     new_tags.extend(self.event_user_map.get(lowercase_keys[tag]))
                 #     flag = False
@@ -173,7 +173,7 @@ class SimpleRecSys:
 
         event_scores.sort(key=lambda x: x[1], reverse=True)
         print(f"Found {len(event_scores)} events returned 5")
-        top_5_events = self.events_df.loc[[x[0] for x in event_scores[:5]]]        
+        top_5_events = self.events_df.loc[[x[0] for x in event_scores[:5]]].sort_values('start_millis')        
 
         return top_5_events['id'].to_list()
     
